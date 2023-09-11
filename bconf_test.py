@@ -62,10 +62,26 @@ class TokenStreamTest(unittest.TestCase):
             ]
         ),
         (
+            ("""identifier "string captures nested string \"test\"" identifier"""), 
+            [
+                ("identifier", TokenType.ID),
+                ('"string captures nested string \"test\""', TokenType.STRING1),
+                ("identifier", TokenType.ID)
+            ]
+        ),
+        (
             ("""identifier 'This is a string 1232' identifier"""), 
             [
                 ("identifier", TokenType.ID),
                 ("'This is a string 1232'", TokenType.STRING2),
+                ("identifier", TokenType.ID)
+            ]
+        ),
+        (
+            ("""identifier 'string captures nested string \'test\'' identifier"""), 
+            [
+                ("identifier", TokenType.ID),
+                ("'string captures nested string \'test\''", TokenType.STRING2),
                 ("identifier", TokenType.ID)
             ]
         ),
@@ -99,6 +115,46 @@ class TokenStreamTest(unittest.TestCase):
                 ("brace", TokenType.ID),
                 ("{", TokenType.CURLY_BRACE_OPEN),
                 ("}", TokenType.CURLY_BRACE_CLOS)
+            ]
+        ),
+        (
+            ("""[identifier,identifier,]"""),
+            [
+                ("[", TokenType.SQUARE_BRACKET_OPEN),
+                ("identifier", TokenType.ID),
+                (",", TokenType.COMMA),
+                ("identifier", TokenType.ID),
+                (",", TokenType.COMMA),
+                ("]", TokenType.SQUARE_BRACKET_CLOS)
+            ]
+        ),
+        (
+            ("""[ identifier , identifier , ] """),
+            [
+                ("[", TokenType.SQUARE_BRACKET_OPEN),
+                ("identifier", TokenType.ID),
+                (",", TokenType.COMMA),
+                ("identifier", TokenType.ID),
+                (",", TokenType.COMMA),
+                ("]", TokenType.SQUARE_BRACKET_CLOS)
+            ]
+        ),
+        (
+            ("""semicolon; another;"""),
+            [
+                ("semicolon", TokenType.ID),
+                (";", TokenType.SEMICOLON),
+                ("another", TokenType.ID),
+                (";", TokenType.SEMICOLON),
+            ]
+        ),
+        (
+            ("""key: value;"""),
+            [
+                ("key", TokenType.ID),
+                (":", TokenType.COLON),
+                ("value", TokenType.ID),
+                (";", TokenType.SEMICOLON),
             ]
         ),
     ])

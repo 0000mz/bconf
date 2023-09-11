@@ -106,20 +106,26 @@ class TokenType(Enum):
     SQUARE_BRACKET_CLOS = 7
     CURLY_BRACE_OPEN    = 8
     CURLY_BRACE_CLOS    = 9
+    COMMA               = 10
+    SEMICOLON           = 11
+    COLON               = 12
 
 def patt(patt_str: str):
     SPC_MATCH = "((\s)+)?"
     return re.compile("{}{}{}".format(SPC_MATCH, patt_str, SPC_MATCH))
 
 kTokenMatcher = {
-    TokenType.ID:                  patt("(?P<token>[a-zA-Z]+)"),
-    TokenType.NUM:                 patt("(?P<token>[0-9]+)"),
-    TokenType.STRING1:             patt("(?P<token>(\").*(\"))"),
-    TokenType.STRING2:             patt("(?P<token>(\').*(\'))"),
-    TokenType.SQUARE_BRACKET_OPEN: patt("(?P<token>\[)"),
-    TokenType.SQUARE_BRACKET_CLOS: patt("(?P<token>\])"),
-    TokenType.CURLY_BRACE_OPEN: patt("(?P<token>\{)"),
-    TokenType.CURLY_BRACE_CLOS: patt("(?P<token>\})"),
+    TokenType.ID:                   patt("(?P<token>[a-zA-Z]+)"),
+    TokenType.NUM:                  patt("(?P<token>[0-9]+)"),
+    TokenType.STRING1:              patt("(?P<token>(\").*(\"))"),
+    TokenType.STRING2:              patt("(?P<token>(\').*(\'))"),
+    TokenType.SQUARE_BRACKET_OPEN:  patt("(?P<token>\[)"),
+    TokenType.SQUARE_BRACKET_CLOS:  patt("(?P<token>\])"),
+    TokenType.CURLY_BRACE_OPEN:     patt("(?P<token>\{)"),
+    TokenType.CURLY_BRACE_CLOS:     patt("(?P<token>\})"),
+    TokenType.COMMA:                patt("(?P<token>,)"),
+    TokenType.SEMICOLON:            patt("(?P<token>;)"),
+    TokenType.COLON:                patt("(?P<token>:)"),
 }
 
 class Token:
