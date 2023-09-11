@@ -141,7 +141,11 @@ class Token:
 
     def __str__(self):
         self.compute_type()
-        return self.extracted_token if self.extracted_token is not None and len(self.part) > 0 else "[None]"
+        if self.extracted_token is not None:
+            return self.extracted_token
+        elif len(self.part) > 0:
+            return self.part
+        return "[None]"
 
     def add_part(self, part: str):
         self.part += part
@@ -202,11 +206,8 @@ class TokenStream(Stream[Token]):
             self.token_context.compute_type()
             if self.token_context.type == TokenType.INVALID:
                 self._end_of_stream(True)
-                return None
-            next_token = self.token_context
-            self.token_context = Token()
-            self.token_context.consume_remainder(next_token)
-            return next_token
+                return self._reset_token()
+            return self._reset_token()
      
         if self.ypos == len(self.buffer) - 1 and not self.fstream.eos:
             return self.next()
@@ -240,10 +241,14 @@ class TokenStream(Stream[Token]):
         if self.token_context.type == TokenType.INVALID:
             return self.next()
 
+        return self._reset_token()
+
+    def _reset_token(self):
         next_token = self.token_context
         self.token_context = Token()
         self.token_context.consume_remainder(next_token)
         return next_token
+
 
     def _refill_buffers(self):
         if self.buffer is not None and self.ypos != len(self.buffer) - 1:

@@ -271,6 +271,22 @@ class TokenStreamTest(unittest.TestCase):
             index += 1
         self.assertEqual(index, len(tokenlst))
 
+    def test_eof_with_unidentified_token(self):
+        contents = """
+        "This is a string that is unterminated
+        """
+        memfile = io.StringIO(contents)
+
+        fstream = InputFileStream.FromFilePtr(memfile, 4)
+        tokstream = TokenStream(fstream)
+
+        token = tokstream.next()
+        self.assertIsNotNone(token)
+        self.assertEqual(token.type, TokenType.INVALID)
+        self.assertEqual(str(token), """        "This is a string that is unterminated""")
+
+        token = tokstream.next()
+        self.assertIsNone(token)
 
 if __name__ == '__main__':
     unittest.main()
