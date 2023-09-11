@@ -3,6 +3,7 @@ import sys
 from abc import abstractmethod
 from typing import TypeVar, Generic, Optional
 from typing_extensions import Self
+from enum import Enum
 
 StreamData = TypeVar('StreamData')
 
@@ -94,12 +95,20 @@ def firstchar(data: str) -> Optional[str]:
         index += 1
     return None if index >= len(data) else data[index]
 
+class TokenType(Enum):
+    ID = 1
+
 class Token:
-    def __init__(self, part: str):
+    def __init__(self, part: str, tokentype: TokenType):
         self.part = part
+        self.tokentype = tokentype
 
     def __str__(self):
         return self.part if self.part is not None else "[None]"
+
+    @property
+    def type(self) -> TokenType:
+        return self.tokentype
 
 class TokenStream(Stream[Token]):
     """
@@ -154,7 +163,7 @@ class TokenStream(Stream[Token]):
 
         self.xpos = endx
         part = row[startx:endx]
-        return Token(part)
+        return Token(part, TokenType.ID)
 
     def _refill_buffers(self):
         if self.buffer is not None and self.ypos != len(self.buffer) - 1:

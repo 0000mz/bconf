@@ -1,6 +1,6 @@
 import io
 import unittest
-from bconf_lib import InputFileStream, TokenStream
+from bconf_lib import InputFileStream, TokenStream, TokenType
 from parameterized import parameterized
 
 class InputFileStreamTest(unittest.TestCase):
@@ -38,7 +38,7 @@ class TokenStreamTest(unittest.TestCase):
 
          """, ["This", "message", "is", "filled", "with", "multiple", "newlines"], 4),
     ])
-    def test_parse_tokens(self, filecontents: str, tokenlst: list[str], chunksize: int):
+    def test_parse_id_tokens(self, filecontents: str, tokenlst: list[str], chunksize: int):
         memfile = io.StringIO(filecontents)
 
         fstream = InputFileStream.FromFilePtr(memfile, chunksize)
@@ -48,6 +48,7 @@ class TokenStreamTest(unittest.TestCase):
             self.assertTrue(index < len(tokenlst))
             expected_token = tokenlst[index]
             self.assertEqual(str(token), expected_token)
+            self.assertEqual(token.type, TokenType.ID)
             index += 1
         self.assertTrue(index == len(tokenlst))
 
