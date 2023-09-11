@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 from abc import abstractmethod
 from typing import TypeVar, Generic, Optional
@@ -96,19 +97,65 @@ def firstchar(data: str) -> Optional[str]:
     return None if index >= len(data) else data[index]
 
 class TokenType(Enum):
-    ID = 1
+    INVALID             = 1
+    ID                  = 2
+    NUM                 = 3
+    STRING1             = 4
+    STRING2             = 5
+    SQUARE_BRACKET_OPEN = 6
+    SQUARE_BRACKET_CLOS = 7
+    CURLY_BRACE_OPEN    = 8
+    CURLY_BRACE_CLOS    = 9
+
+def patt(patt_str: str):
+    SPC_MATCH = "((\s)+)?"
+    return re.compile("{}{}{}".format(SPC_MATCH, patt_str, SPC_MATCH))
+
+kTokenMatcher = {
+    TokenType.ID:                  patt("(?P<token>[a-zA-Z]+)"),
+    TokenType.NUM:                 patt("(?P<token>[0-9]+)"),
+    TokenType.STRING1:             patt("(?P<token>(\").*(\"))"),
+    TokenType.STRING2:             patt("(?P<token>(\').*(\'))"),
+    TokenType.SQUARE_BRACKET_OPEN: patt("(?P<token>\[)"),
+    TokenType.SQUARE_BRACKET_CLOS: patt("(?P<token>\])"),
+    TokenType.CURLY_BRACE_OPEN: patt("(?P<token>\{)"),
+    TokenType.CURLY_BRACE_CLOS: patt("(?P<token>\})"),
+}
 
 class Token:
-    def __init__(self, part: str, tokentype: TokenType):
-        self.part = part
-        self.tokentype = tokentype
+    def __init__(self):
+        self.part = ""
+        self.extracted_token: str | None = None
+        self.extracted_token_type = TokenType.INVALID
+        self.end_index = -1
 
     def __str__(self):
-        return self.part if self.part is not None else "[None]"
+        self.compute_type()
+        return self.extracted_token if self.extracted_token is not None and len(self.part) > 0 else "[None]"
+
+    def add_part(self, part: str):
+        self.part += part
+
+    def consume_remainder(self, prev_token: Self):
+        if prev_token.end_index >= 0:
+            self.part = prev_token.part[prev_token.end_index:] + self.part
+        self.compute_type()
+
+    def compute_type(self) -> TokenType:
+        if self.extracted_token != None:
+            return self.extracted_token_type
+
+        for token, pattern in kTokenMatcher.items():
+            match = pattern.match(self.part)
+            if match is not None:
+                self.extracted_token = match.groupdict()["token"]
+                self.extracted_token_type = token
+                self.end_index = match.end('token')
+        return self.extracted_token_type
 
     @property
     def type(self) -> TokenType:
-        return self.tokentype
+        return self.compute_type()
 
 class TokenStream(Stream[Token]):
     """
@@ -133,6 +180,7 @@ class TokenStream(Stream[Token]):
         self.fstream = filestream
         self.buffer: list[str] | None = None
         self.xpos = self.ypos = 0
+        self.token_context = Token()
 
     def next(self) -> Optional[Token]:
         if self.eos: return None
@@ -141,14 +189,22 @@ class TokenStream(Stream[Token]):
         # print("Current buffer: ", self.buffer, "[x = ", self.xpos, ", y = ", self.ypos, "")
         assert (self.buffer is not None)
         if self.ypos < 0 or self.ypos >= len(self.buffer):
-            self._end_of_stream(True)
-            return None
+            # Process remaining values in current token
+            self.token_context.compute_type()
+            if self.token_context.type == TokenType.INVALID:
+                self._end_of_stream(True)
+                return None
+            next_token = self.token_context
+            self.token_context = Token()
+            self.token_context.consume_remainder(next_token)
+            return next_token
      
         if self.ypos == len(self.buffer) - 1 and not self.fstream.eos:
             return self.next()
 
         row = self.buffer[self.ypos]
         # Start on a character outside of the skipset
+        prestartx = self.xpos
         startx = self.xpos
         while startx < len(row) and row[startx] in TokenStream.SKIPSET:
             startx += 1
@@ -162,8 +218,16 @@ class TokenStream(Stream[Token]):
             endx += 1
 
         self.xpos = endx
-        part = row[startx:endx]
-        return Token(part, TokenType.ID)
+        part = row[prestartx:endx]
+        self.token_context.add_part(part)
+
+        if self.token_context.type == TokenType.INVALID:
+            return self.next()
+
+        next_token = self.token_context
+        self.token_context = Token()
+        self.token_context.consume_remainder(next_token)
+        return next_token
 
     def _refill_buffers(self):
         if self.buffer is not None and self.ypos != len(self.buffer) - 1:
