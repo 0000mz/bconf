@@ -65,11 +65,11 @@ class InputFileStream(Stream[bytes]):
         self.chunk_size = chunk_size
 
     @staticmethod
-    def FromFilename(filename: str, chunk_size = 1000) -> Self:
+    def FromFilename(filename: str, chunk_size = 1000):
         return InputFileStream(filename, None, chunk_size)
 
     @staticmethod
-    def FromFilePtr(fileptr, chunk_size = 1000) -> Self:
+    def FromFilePtr(fileptr, chunk_size = 1000):
         return InputFileStream("", fileptr, chunk_size)
 
     def __del__(self):
@@ -130,6 +130,7 @@ class TokenStream(Stream[Token]):
         self._refill_buffers()
 
         # print("Current buffer: ", self.buffer, "[x = ", self.xpos, ", y = ", self.ypos, "")
+        assert (self.buffer is not None)
         if self.ypos < 0 or self.ypos >= len(self.buffer):
             self._end_of_stream(True)
             return None
@@ -137,7 +138,6 @@ class TokenStream(Stream[Token]):
         if self.ypos == len(self.buffer) - 1 and not self.fstream.eos:
             return self.next()
 
-        assert (self.buffer is not None)
         row = self.buffer[self.ypos]
         # Start on a character outside of the skipset
         startx = self.xpos
