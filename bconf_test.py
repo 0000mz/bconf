@@ -238,6 +238,24 @@ class TokenStreamTest(unittest.TestCase):
                 (";", TokenType.SEMICOLON),
             ]
         ),
+        (
+            ("""
+             # This is a comment
+             key = value;
+             # This is another comment
+             key:value;
+             """),
+            [
+                ("key", TokenType.ID),
+                ("=", TokenType.EQUAL),
+                ("value", TokenType.ID),
+                (";", TokenType.SEMICOLON),
+                ("key", TokenType.ID),
+                (":", TokenType.COLON),
+                ("value", TokenType.ID),
+                (";", TokenType.SEMICOLON),
+            ]
+        )
     ])
     def test_parse_all_tokens(self, filecontents: str, tokenlst: list[tuple[str, TokenType]]):
         memfile = io.StringIO(filecontents)

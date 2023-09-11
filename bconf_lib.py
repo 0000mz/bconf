@@ -92,7 +92,7 @@ class InputFileStream(Stream[bytes]):
 # string.
 def firstchar(data: str) -> Optional[str]:
     index = 0
-    while data[index] == ' ' or data[index] == '\n':
+    while index < len(data) and (data[index] == ' ' or data[index] == '\n'):
         index += 1
     return None if index >= len(data) else data[index]
 
@@ -196,7 +196,6 @@ class TokenStream(Stream[Token]):
         if self.eos: return None
         self._refill_buffers()
 
-        # print("Current buffer: ", self.buffer, "[x = ", self.xpos, ", y = ", self.ypos, "")
         assert (self.buffer is not None)
         if self.ypos < 0 or self.ypos >= len(self.buffer):
             # Process remaining values in current token
@@ -213,6 +212,13 @@ class TokenStream(Stream[Token]):
             return self.next()
 
         row = self.buffer[self.ypos]
+        while firstchar(row) == '#':
+            self.ypos += 1
+            self.xpos = 0
+            if self.ypos == len(self.buffer) - 1 and not self.fstream.eos:
+                return self.next()
+            row = self.buffer[self.ypos]
+
         # Start on a character outside of the skipset
         prestartx = self.xpos
         startx = self.xpos
