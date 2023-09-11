@@ -149,11 +149,92 @@ class TokenStreamTest(unittest.TestCase):
             ]
         ),
         (
-            ("""key: value;"""),
+            ("""key:value;"""),
             [
                 ("key", TokenType.ID),
                 (":", TokenType.COLON),
                 ("value", TokenType.ID),
+                (";", TokenType.SEMICOLON),
+            ]
+        ),
+        (
+            ("""key : value;"""),
+            [
+                ("key", TokenType.ID),
+                (":", TokenType.COLON),
+                ("value", TokenType.ID),
+                (";", TokenType.SEMICOLON),
+            ]
+        ),
+        (
+            ("""key=value;"""),
+            [
+                ("key", TokenType.ID),
+                ("=", TokenType.EQUAL),
+                ("value", TokenType.ID),
+                (";", TokenType.SEMICOLON),
+            ]
+        ),
+        (
+            ("""key = value;"""),
+            [
+                ("key", TokenType.ID),
+                ("=", TokenType.EQUAL),
+                ("value", TokenType.ID),
+                (";", TokenType.SEMICOLON),
+            ]
+        ),
+        (
+            ("""number = 123.456;"""),
+            [
+                ("number", TokenType.ID),
+                ("=", TokenType.EQUAL),
+                ("123.456", TokenType.NUM),
+                (";", TokenType.SEMICOLON),
+            ]
+        ),
+        (
+            ("""number = 123.;"""),
+            [
+                ("number", TokenType.ID),
+                ("=", TokenType.EQUAL),
+                ("123.", TokenType.NUM),
+                (";", TokenType.SEMICOLON),
+            ]
+        ),
+        (
+            ("""number = -123.;"""),
+            [
+                ("number", TokenType.ID),
+                ("=", TokenType.EQUAL),
+                ("-123.", TokenType.NUM),
+                (";", TokenType.SEMICOLON),
+            ]
+        ),
+        (
+            ("""number = 0xff;"""),
+            [
+                ("number", TokenType.ID),
+                ("=", TokenType.EQUAL),
+                ("0xff", TokenType.HEX),
+                (";", TokenType.SEMICOLON),
+            ]
+        ),
+        (
+            ("""number = 0xffffffffffff;"""),
+            [
+                ("number", TokenType.ID),
+                ("=", TokenType.EQUAL),
+                ("0xffffffffffff", TokenType.HEX),
+                (";", TokenType.SEMICOLON),
+            ]
+        ),
+        (
+            ("""number = -0x0023f9af12;"""),
+            [
+                ("number", TokenType.ID),
+                ("=", TokenType.EQUAL),
+                ("-0x0023f9af12", TokenType.HEX),
                 (";", TokenType.SEMICOLON),
             ]
         ),

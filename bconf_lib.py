@@ -100,15 +100,17 @@ class TokenType(Enum):
     INVALID             = 1
     ID                  = 2
     NUM                 = 3
-    STRING1             = 4
-    STRING2             = 5
-    SQUARE_BRACKET_OPEN = 6
-    SQUARE_BRACKET_CLOS = 7
-    CURLY_BRACE_OPEN    = 8
-    CURLY_BRACE_CLOS    = 9
-    COMMA               = 10
-    SEMICOLON           = 11
-    COLON               = 12
+    HEX                 = 4
+    STRING1             = 5
+    STRING2             = 6
+    SQUARE_BRACKET_OPEN = 7
+    SQUARE_BRACKET_CLOS = 8
+    CURLY_BRACE_OPEN    = 9
+    CURLY_BRACE_CLOS    = 10
+    COMMA               = 11
+    SEMICOLON           = 12
+    COLON               = 13
+    EQUAL               = 14
 
 def patt(patt_str: str):
     SPC_MATCH = "((\s)+)?"
@@ -116,7 +118,8 @@ def patt(patt_str: str):
 
 kTokenMatcher = {
     TokenType.ID:                   patt("(?P<token>[a-zA-Z]+)"),
-    TokenType.NUM:                  patt("(?P<token>[0-9]+)"),
+    TokenType.NUM:                  patt("(?P<token>(-)?[0-9]+((\.)([0-9]+)?)?)"),
+    TokenType.HEX:                  patt("(?P<token>(-)?(0x)[abcdef0-9]+)"),
     TokenType.STRING1:              patt("(?P<token>(\").*(\"))"),
     TokenType.STRING2:              patt("(?P<token>(\').*(\'))"),
     TokenType.SQUARE_BRACKET_OPEN:  patt("(?P<token>\[)"),
@@ -126,6 +129,7 @@ kTokenMatcher = {
     TokenType.COMMA:                patt("(?P<token>,)"),
     TokenType.SEMICOLON:            patt("(?P<token>;)"),
     TokenType.COLON:                patt("(?P<token>:)"),
+    TokenType.EQUAL:                patt("(?P<token>=)"),
 }
 
 class Token:
