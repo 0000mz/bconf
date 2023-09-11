@@ -1,7 +1,7 @@
 import io
 import unittest
 from bconf_lib import InputFileStream, TokenStream, TokenType
-from parameterized import parameterized
+from parameterized import parameterized # type: ignore
 
 class InputFileStreamTest(unittest.TestCase):
 
@@ -48,7 +48,7 @@ class TokenStreamTest(unittest.TestCase):
             self.assertTrue(index < len(tokenlst))
             expected_token = tokenlst[index]
             self.assertEqual(str(token), expected_token)
-            self.assertEqual(token.type, TokenType.ID)
+            self.assertEqual(token.type, TokenType.ID) # type: ignore
             index += 1
         self.assertTrue(index == len(tokenlst))
 
