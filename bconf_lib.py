@@ -1,8 +1,9 @@
 import os
 import re
 import sys
+import copy
 from abc import abstractmethod
-from typing import TypeVar, Generic, Optional
+from typing import TypeVar, Generic, Optional, Any
 from typing_extensions import Self
 from enum import Enum
 
@@ -276,6 +277,102 @@ class TokenStream(Stream[Token]):
             # position.
             self.buffer = self.buffer[self.ypos:]
             self.ypos = min(len(self.buffer) - 1, 0)
+
+class TokenGroupType(Enum):
+    START = 0
+    END   = 1
+
+class Grammar:
+
+    def get(self):
+        return [
+            [ TokenType.ID, TokenType.CURLY_BRACE_OPEN, TokenType.CURLY_BRACE_CLOS ]
+        ]
+
+class GrammarNode:
+
+    def __init__(self, token_type: TokenType | TokenGroupType):
+        self.token_type: Optional[TokenType] = None
+        self.group_type: Optional[TokenGroupType] = None
+
+        if isinstance(token_type, TokenGroupType):
+            self.group_type = token_type
+        else:
+            self.token_type = token_type
+
+        self._children: list[Self] = []
+    
+    @property
+    def token(self) -> TokenType | TokenGroupType:
+        return self.token_type if self.token_type is not None else self.group_type
+
+    @property
+    def children(self) -> list[Self]:
+        return self._children
+
+    # Add a node as a child of this node. Return the added node.
+    def add_node(self, grammar_node: Self) -> Self:
+        for child_node in self._children:
+            if grammar_node.token == child_node.token:
+                return child_node
+        
+        self._children.append(grammar_node)
+        return self._children[len(self._children) - 1]
+
+class GrammarTree:
+
+    def __init__(self, grammar: Grammar):
+        self.grammar = grammar.get()
+        self._root = GrammarNode(TokenGroupType.START)
+        assert self._generate_grammar_tree()
+
+    @staticmethod
+    def InitFromGrammar(grammar: Grammar):
+        return GrammarTree(grammar)
+   
+    @property
+    def root(self) -> GrammarNode:
+        return self._root
+
+    def _generate_grammar_tree(self) -> bool:
+        for grammar_group in self.grammar:
+            current_node = self._root
+            for grammar_token in grammar_group:
+                current_node = current_node.add_node(GrammarNode(grammar_token))
+            current_node.add_node(GrammarNode(TokenGroupType.END))
+        return True
+
+# Return true if the token matches the grammar for the given `index`.
+def matches_grammar(grammar: list[TokenType], token: Token, index: int):
+    return index < len(grammar) and grammar[index] == token.type
+
+class Parser:
+
+    def __init__(self, filestream: InputFileStream):
+        assert(filestream is not None)
+        self.tokenstream = TokenStream(filestream)
+        self.parsed_data: dict[str, Any] = {}
+
+    def parse(self) -> bool:
+
+        index = 0
+        current_grammar = copy.deepcopy(Grammer().get())
+        for token in self.tokenstream:
+            if token.type == TokenType.INVALID:
+                # TODO: Return the actual error in the payload.
+                raise SyntaxError("File does not match bconf grammar.")
+            
+            current_grammer = list(
+                    filter(
+                        lambda el: matches_grammar(current_grammar, token, index), current_grammar
+                    )
+                )
+            index += 1
+        return len(current_grammar) == 1 and index == len(current_grammar[0])
+
+    @property
+    def data(self) -> dict[str, Any]:
+        return self.parsed_data
 
 def _lexer(filestream: InputFileStream):
     pass
