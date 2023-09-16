@@ -283,39 +283,123 @@ class TokenGroupType(Enum):
     END   = 1
 
 class Grammar:
+    def get(self):
+        return []
+
+kTokenMap = {
+        'A': TokenType.ID,
+        'B': TokenType.NUM,
+        'C': TokenType.HEX,
+        'D': TokenType.STRING1,
+        'E': TokenType.STRING2,
+        'F': TokenType.SQUARE_BRACKET_OPEN,
+        'G': TokenType.SQUARE_BRACKET_CLOS,
+        'H': TokenType.CURLY_BRACE_OPEN,
+        'I': TokenType.CURLY_BRACE_CLOS,
+        'J': TokenType.COMMA,
+        'K': TokenType.SEMICOLON,
+        'L': TokenType.COLON,
+        'M': TokenType.EQUAL,
+}
+class BConfGrammar(Grammar):
 
     def get(self):
         return [
-            [ TokenType.ID, TokenType.CURLY_BRACE_OPEN, TokenType.CURLY_BRACE_CLOS ]
+            # identifier { }
+            "AHI",
         ]
+
+_QUALIFIER_STARTS = set(['+', '*', '?', '{'])
+def split_regex_into_groups(grammar_regex: str) -> list[str]:
+    groups: list[str] = []
+    current_complex: Optional[str] = None
+    nested_paren_ct = 0
+
+    def is_beginning_of_qualifier(el: str) -> bool:
+        return el in _QUALIFIER_STARTS
+
+    def extract_qualifier(regex: str) -> str:
+        assert len(regex) > 0
+        if regex[0] == '{':
+            index = 1
+            while index < len(regex) and regex[index] != '}':
+                index += 1
+            assert regex[index] == '}'
+            return regex[:index+1]
+        else:
+            return regex[0]
+
+    def add_simple_element(el: str):
+        nonlocal current_complex, groups
+        if current_complex is not None:
+            current_complex += el
+        else:
+            groups.append(el)
+
+    i = 0
+    while i < len(grammar_regex):
+        el = grammar_regex[i]
+        if el == '(':
+            nested_paren_ct += 1
+        elif el == ')':
+            nested_paren_ct -= 1
+
+        if el == '(' and nested_paren_ct == 1:
+            current_complex = '('
+        elif el == ')' and nested_paren_ct == 0:
+            assert current_complex is not None
+            current_complex += ')'
+            next_el = grammar_regex[i+1] if i+1 < len(grammar_regex) else None
+            if next_el is not None and is_beginning_of_qualifier(next_el):
+                qualifier = extract_qualifier(grammar_regex[i+1:])
+                current_complex += qualifier
+                i += len(qualifier)
+            groups.append(current_complex)
+            current_complex = None
+
+        else:
+            el_to_add = el
+            next_el = grammar_regex[i+1] if i+1 < len(grammar_regex) else None
+            if next_el is not None and is_beginning_of_qualifier(next_el):
+                qualifier = extract_qualifier(grammar_regex[i+1:])
+                el_to_add += qualifier
+                i += len(qualifier)
+            add_simple_element(el_to_add)
+        i += 1
+    return groups
 
 class GrammarNode:
 
-    def __init__(self, token_type: TokenType | TokenGroupType):
-        self.token_type: Optional[TokenType] = None
+    def __init__(self, token_id: str | TokenGroupType):
+        self.token_match: Optional[str] = None
         self.group_type: Optional[TokenGroupType] = None
 
-        if isinstance(token_type, TokenGroupType):
-            self.group_type = token_type
+        if isinstance(token_id, TokenGroupType):
+            self.group_type = token_id
         else:
-            self.token_type = token_type
-
+            self.token_match = token_id
         self._children: list[Self] = []
-    
+   
     @property
-    def token(self) -> TokenType | TokenGroupType:
-        return self.token_type if self.token_type is not None else self.group_type
+    def data(self) -> str | TokenGroupType:
+        assert self.group_type is not None or self.token_match is not None
+        return self.group_type if self.group_type is not None else self.token_match # type: ignore
 
     @property
     def children(self) -> list[Self]:
         return self._children
+    
+    def is_same_node_type(self, node: Self) -> bool:
+        if self.token_match is not None and node.token_match is not None:
+            return self.token_match == node.token_match
+        else:
+            return self.group_type == node.group_type
 
     # Add a node as a child of this node. Return the added node.
     def add_node(self, grammar_node: Self) -> Self:
         for child_node in self._children:
-            if grammar_node.token == child_node.token:
+            if child_node.is_same_node_type(grammar_node):
                 return child_node
-        
         self._children.append(grammar_node)
         return self._children[len(self._children) - 1]
 
@@ -335,10 +419,10 @@ class GrammarTree:
         return self._root
 
     def _generate_grammar_tree(self) -> bool:
-        for grammar_group in self.grammar:
+        for grammar_regex in self.grammar:
             current_node = self._root
-            for grammar_token in grammar_group:
-                current_node = current_node.add_node(GrammarNode(grammar_token))
+            for grammar_regex_part in split_regex_into_groups(grammar_regex):
+                current_node = current_node.add_node(GrammarNode(grammar_regex_part))
             current_node.add_node(GrammarNode(TokenGroupType.END))
         return True
 
@@ -355,20 +439,33 @@ class Parser:
 
     def parse(self) -> bool:
 
+        tokens = [token for token in self.tokenstream]
+        if len(list(filter(lambda token: token.type == TokenType.INVALID, tokens))) > 0: # type: ignore
+            raise SyntaxError("File does not match bconf grammar.")
+
         index = 0
-        current_grammar = copy.deepcopy(Grammer().get())
-        for token in self.tokenstream:
-            if token.type == TokenType.INVALID:
-                # TODO: Return the actual error in the payload.
-                raise SyntaxError("File does not match bconf grammar.")
-            
-            current_grammer = list(
-                    filter(
-                        lambda el: matches_grammar(current_grammar, token, index), current_grammar
-                    )
-                )
-            index += 1
-        return len(current_grammar) == 1 and index == len(current_grammar[0])
+        grammar_tree = GrammarTree.InitFromGrammar(BConfGrammar())
+        grammar_stack = [grammar_tree.root]
+        return False
+        # NOTE: For a group of candidate grammar matches, the parser should keep
+        # trying the next candidate if one fails until it gets a match or runs out
+        # of candidates. This means the parser needs to be able to backtrack to a
+        # point where another candidate can be tried and maintain a history of the
+        # token sequence at that point of the grammar parsing.
+
+        # current_grammar = copy.deepcopy(Grammer().get())
+        # for token in self.tokenstream:
+        #     if token.type == TokenType.INVALID:
+        #         # TODO: Return the actual error in the payload.
+        #         raise SyntaxError("File does not match bconf grammar.")
+        #     
+        #     current_grammer = list(
+        #             filter(
+        #                 lambda el: matches_grammar(current_grammar, token, index), current_grammar
+        #             )
+        #         )
+        #     index += 1
+        # return len(current_grammar) == 1 and index == len(current_grammar[0])
 
     @property
     def data(self) -> dict[str, Any]:
