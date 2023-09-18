@@ -3,6 +3,7 @@ import unittest
 import bconf_lib
 from bconf_lib import InputFileStream, TokenStream, TokenType, Parser
 from bconf_lib import Grammar, GrammarTree, TokenGroupType
+from bconf_lib import expand_grammar
 from parameterized import parameterized # type: ignore
 
 class InputFileStreamTest(unittest.TestCase):
@@ -424,6 +425,7 @@ class RegexSplitTest(unittest.TestCase):
         ('A', ['A']),
         ('AA', ['A', 'A']),
         ('A(AA)A', ['A', '(AA)', 'A']),
+        ('A(A|B)A', ['A', '(A|B)', 'A']),
         ('A(AA)+A', ['A', '(AA)+', 'A']),
         ('A+', ['A+']),
         ('AA+', ['A', 'A+']),
@@ -449,6 +451,25 @@ class RegexSplitTest(unittest.TestCase):
         )
         for i in range(len(groups)):
             self.assertEqual(groups[i], expected_groups[i])
+
+class ExpanseinatorTest(unittest.TestCase):
+
+    @parameterized.expand([
+        ('A+', ['A', 'A(A)+']),
+        ('(A)+', ['A', 'A(A)+']),
+        ('(ABC)', ['ABC']),
+        ('(ABC)+', ['ABC', 'ABC(ABC)+']),
+
+        ('A*', ['', 'A', 'A(A)*']),
+        ('(AB)*', ['', 'AB', 'AB(AB)*']),
+
+        ('A?', ['', 'A']),
+        ('(AB)?', ['', 'AB']),
+
+        ('A{2}', ['AA'])
+    ])
+    def test_expansinator(self, grammar: str, espansion: list[str]):
+        _ = expand_grammar(grammar)
 
 # class ParserTest(unittest.TestCase):
 #

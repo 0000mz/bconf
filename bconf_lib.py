@@ -309,14 +309,17 @@ class BConfGrammar(Grammar):
             "AHI",
         ]
 
-_QUALIFIER_STARTS = set(['+', '*', '?', '{'])
+_QUALIFIER_STARTS   = set(['+', '*', '?', '{'])
+_QUALIFIER_END      = set(['+', '*', '?', '}'])
+def is_beginning_of_qualifier(el: str) -> bool:
+    return el in _QUALIFIER_STARTS
+def is_end_of_qualifier(el: str) -> bool:
+    return el in _QUALIFIER_END
+
 def split_regex_into_groups(grammar_regex: str) -> list[str]:
     groups: list[str] = []
     current_complex: Optional[str] = None
     nested_paren_ct = 0
-
-    def is_beginning_of_qualifier(el: str) -> bool:
-        return el in _QUALIFIER_STARTS
 
     def extract_qualifier(regex: str) -> str:
         assert len(regex) > 0
@@ -368,6 +371,77 @@ def split_regex_into_groups(grammar_regex: str) -> list[str]:
         i += 1
     return groups
 
+class Qualifier(Enum):
+    PLUS                 = ord('+')
+    OPTIONAL             = ord('?')
+    MULTIPLIER           = ord('*')
+    CONSTANT_REPLICATION = ord('{') # {2}
+
+def extract_qualifier_from_end(grammar: str) -> Optional[tuple[Qualifier, str]]:
+    if len(grammar) == 0 or not is_end_of_qualifier(grammar[-1]):
+        return None
+    start = len(grammar) - 1
+    if grammar[-1] == '}':
+        while start >= 0 and grammar[start] != '{':
+            start -= 1
+    qualifier_str = grammar[start:]
+    if qualifier_str[0] == '{':
+        return (Qualifier.CONSTANT_REPLICATION, qualifier_str)
+    elif qualifier_str[0] == '+':
+        return (Qualifier.PLUS, qualifier_str)
+    elif qualifier_str[0] == '*':
+        return (Qualifier.MULTIPLIER, qualifier_str)
+    elif qualifier_str[0] == '?':
+        return (Qualifier.OPTIONAL, qualifier_str)
+    raise NotFoundError("Qualifier not defined.")
+
+def deparenthesize(grammar: str) -> str:
+    if len(grammar) > 0 and grammar[0] == '(' and grammar[-1] == ')':
+         return grammar[1:-1]
+    return grammar
+
+def expand_grammar(grammar: str) -> list[str]:
+    """
+    Given a complex grammar, generate all 1 level expansions of the complex grammar.
+
+    A grammar can be expanded if it is parenthesized and/or it has a qualifier.
+    """
+    def _get_grammar_and_qualifier(grammar: str) -> tuple[str, Optional[tuple[str, Qualifier]]]:
+        """
+        Get the grammar and qualifier, separate from each other.
+        i.e. (AB)+ -> (AB, (+, PLUS))
+        Deparenthesize the subject befor returning.
+        """
+        qualifier_info = extract_qualifier_from_end(grammar)
+        if qualifier_info is None:
+            return (deparenthesize(grammar), None)
+        [qualifier_enum, qualifier_value] = qualifier_info
+        return (deparenthesize(grammar[:len(grammar)-len(qualifier_value)]), (qualifier_value, qualifier_enum))
+
+    def _extract_constant_replication(const_qualifier: str) -> int:
+        assert len(const_qualifier) > 0
+        assert const_qualifier[0] == '{'
+        assert const_qualifier[-1] == '}'
+        return int(const_qualifier[1:-1])
+
+    def _apply_qualifier(grammar: str, qualifier: Qualifier, qualifier_str: str) -> list[str]:
+        match qualifier:
+            case Qualifier.PLUS:
+                return [grammar, f'{grammar}({grammar})+']
+            case Qualifier.OPTIONAL:
+                return ['', grammar]
+            case Qualifier.MULTIPLIER:
+                return ['', grammar, f'{grammar}({grammar})*']
+            case CONSTANT_REPLICATION:
+                return [''.join(grammar for i in range(_extract_constant_replication(qualifier_str)))]
+
+    [stripped_grammar, qualifier] = _get_grammar_and_qualifier(grammar)
+    if qualifier is None:
+        return [stripped_grammar]
+
+    [qualifier_str, qualifier_enum] = qualifier
+    return _apply_qualifier(stripped_grammar, qualifier_enum, qualifier_str)
+
 class GrammarNode:
 
     def __init__(self, token_id: str | TokenGroupType):
@@ -388,7 +462,16 @@ class GrammarNode:
     @property
     def children(self) -> list[Self]:
         return self._children
-    
+
+    # A complex grammar node is a grammar node that has an expansion.
+    # i.e. A+ has an expansion to AA+
+    # When exploring complex grammar nodes, they need to be expanded in order to
+    # match tokens to them.
+    def is_complex(self) -> bool:
+        if self.token_match is None:
+            return False
+        return len(self.token_match) > 0 or not self.token_match.isalpha()
+
     def is_same_node_type(self, node: Self) -> bool:
         if self.token_match is not None and node.token_match is not None:
             return self.token_match == node.token_match
@@ -402,6 +485,12 @@ class GrammarNode:
                 return child_node
         self._children.append(grammar_node)
         return self._children[len(self._children) - 1]
+   
+    # Given that the current node is complex, create separate grammar trees for each possible
+    # expansion of this complex node. Return the roots of these generated grammar trees.
+    def generate_expansions(self) -> list[Self]:
+        assert self.is_complex()
+        return []
 
 class GrammarTree:
 
@@ -436,36 +525,51 @@ class Parser:
         assert(filestream is not None)
         self.tokenstream = TokenStream(filestream)
         self.parsed_data: dict[str, Any] = {}
+        self._tokens: list[Token] = []
+    
+    # Cache the next token internally from the token stream.
+    # If no more tokens are available, return False.
+    def _cache_next_token(self) -> bool:
+        next_token = self.tokenstream.next()
+        if next_token is None:
+            return False
+        self._tokens.append(next_token)
+        return True
+
+    # Get the `index`th token from the token stream
+    def _get_token(self, index: int) -> Optional[Token]:
+        assert index >= 0
+        while index >= len(self._tokens):
+            if not self._cache_next_token():
+                return None
+        return self._tokens[index]
 
     def parse(self) -> bool:
-
-        tokens = [token for token in self.tokenstream]
-        if len(list(filter(lambda token: token.type == TokenType.INVALID, tokens))) > 0: # type: ignore
-            raise SyntaxError("File does not match bconf grammar.")
-
-        index = 0
         grammar_tree = GrammarTree.InitFromGrammar(BConfGrammar())
-        grammar_stack = [grammar_tree.root]
-        return False
-        # NOTE: For a group of candidate grammar matches, the parser should keep
-        # trying the next candidate if one fails until it gets a match or runs out
-        # of candidates. This means the parser needs to be able to backtrack to a
-        # point where another candidate can be tried and maintain a history of the
-        # token sequence at that point of the grammar parsing.
+        # The stack holds entries of type: tuple[GrammarNode, int | None]
+        # The GrammarNode is the node to be explored and the int is the
+        # index of the token that should be resolved by that node.
+        #
+        # Special case: root node must satisfy token index -1, a non-existent
+        # node. This should be skipped bc the root node here is the START token.
+        grammar_stack: list[tuple[GrammarNode, int]] = [[grammar_tree.root, -1]]
 
-        # current_grammar = copy.deepcopy(Grammer().get())
-        # for token in self.tokenstream:
-        #     if token.type == TokenType.INVALID:
-        #         # TODO: Return the actual error in the payload.
-        #         raise SyntaxError("File does not match bconf grammar.")
-        #     
-        #     current_grammer = list(
-        #             filter(
-        #                 lambda el: matches_grammar(current_grammar, token, index), current_grammar
-        #             )
-        #         )
-        #     index += 1
-        # return len(current_grammar) == 1 and index == len(current_grammar[0])
+        # Try to find a path in the grammar tree that satisfies
+        # the entire sequence of tokens in the token stream.
+        # Expand complex nodes if necessary.
+        while not grammar_stack:
+            [current_node, token_index] = grammar_stack.pop()
+
+            # Complex nodes should be expanded.
+            if current_node.is_complex():
+                expansion_nodes = current_node.generate_expansions()
+
+            for child_node in current_node.children:
+                # TODO: (OPT) Add children to stack in order of least complex to
+                # most for optimization.
+                grammar_stack.append([current_node, token_index + 1])
+
+        return False
 
     @property
     def data(self) -> dict[str, Any]:
