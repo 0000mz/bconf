@@ -2,6 +2,8 @@ import os
 import re
 import sys
 import copy
+import logging
+import argparse
 from abc import abstractmethod
 from typing import TypeVar, Generic, Optional, Any
 from typing_extensions import Self
@@ -58,6 +60,7 @@ class InputFileStream(Stream[bytes]):
         # `self.chunk_size`: The max number of bytes to read from the input
         # file at a time.
 
+        self.fptr = None
         if len(filename) == 0:
             assert fileptr is not None
             self.fptr = fileptr
@@ -453,7 +456,13 @@ class GrammarNode:
         else:
             self.token_match = token_id
         self._children: list[Self] = []
-   
+        self._parent = None
+  
+    def __str__(self):
+        if self.group_type is not None:
+            return "[GROUP_TYPE]" # TODO: Print the actual group type info
+        return self.token_match
+
     @property
     def data(self) -> str | TokenGroupType:
         assert self.group_type is not None or self.token_match is not None
@@ -462,6 +471,10 @@ class GrammarNode:
     @property
     def children(self) -> list[Self]:
         return self._children
+    
+    @property
+    def parent(self) -> Optional[Self]:
+        return self._parent
 
     # A complex grammar node is a grammar node that has an expansion.
     # i.e. A+ has an expansion to AA+
@@ -478,19 +491,56 @@ class GrammarNode:
         else:
             return self.group_type == node.group_type
 
+    def set_parent(self, node: Optional[Self]):
+        self._parent = node
+
     # Add a node as a child of this node. Return the added node.
-    def add_node(self, grammar_node: Self) -> Self:
+    def add_child_node(self, grammar_node: Self) -> Self:
         for child_node in self._children:
             if child_node.is_same_node_type(grammar_node):
                 return child_node
         self._children.append(grammar_node)
+        grammar_node.set_parent(self)
         return self._children[len(self._children) - 1]
-   
+
+    # Return a copy of the current node, excluding the children.
+    def clone(self) -> Self:
+        new_node = GrammarNode(self.group_type if self.group_type is not None else self.token_match)
+        return new_node
+
+    # Given a node, copy all the children and the children's childrens recursively until the
+    # entire subtree of `src` is copied to the current grammar tree.
+    def copy_children_subtrees(self, src: Self):
+        src_stack: list[GrammarNode] = [src]
+        dst_stack: list[GrammarNode] = [self]
+
+        while src_stack:
+            next_src = src_queue.pop()
+            next_dst = dst_stack.pop()
+
+            for src_child in next_src.children:
+                next_child = src_child.clone()
+                next_dst.add_child_node(next_child)
+                src_stack.append(src_child)
+                dst_stack.append(dst_child)
+
     # Given that the current node is complex, create separate grammar trees for each possible
     # expansion of this complex node. Return the roots of these generated grammar trees.
     def generate_expansions(self) -> list[Self]:
         assert self.is_complex()
-        return []
+
+        logging.debug("[generate_expansions] token_match = %s", self.token_match)
+        expansions = expand_grammar(self.token_match)
+        expansion_nodes = []
+
+        # Create the node and duplicate the children of the current node to the
+        # created node.
+        for expansion in expansions:
+            new_node = GrammarNode(expansion)
+            new_node.copy_children_subtrees(self)
+            expansion_nodes.append(new_node)
+
+        return expansion_nodes
 
 class GrammarTree:
 
@@ -511,8 +561,8 @@ class GrammarTree:
         for grammar_regex in self.grammar:
             current_node = self._root
             for grammar_regex_part in split_regex_into_groups(grammar_regex):
-                current_node = current_node.add_node(GrammarNode(grammar_regex_part))
-            current_node.add_node(GrammarNode(TokenGroupType.END))
+                current_node = current_node.add_child_node(GrammarNode(grammar_regex_part))
+            current_node.add_child_node(GrammarNode(TokenGroupType.END))
         return True
 
 # Return true if the token matches the grammar for the given `index`.
@@ -553,21 +603,28 @@ class Parser:
         # Special case: root node must satisfy token index -1, a non-existent
         # node. This should be skipped bc the root node here is the START token.
         grammar_stack: list[tuple[GrammarNode, int]] = [(grammar_tree.root, -1)]
+        logging.debug("Initial grammar stack for parsing: %s", grammar_stack)
 
         # Try to find a path in the grammar tree that satisfies
         # the entire sequence of tokens in the token stream.
         # Expand complex nodes if necessary.
-        while not grammar_stack:
+        while grammar_stack:
             [current_node, token_index] = grammar_stack.pop()
+            logging.debug("parsing next node: %s (token index = %s)", current_node, token_index)
 
             # Complex nodes should be expanded.
             if current_node.is_complex():
+                logging.debug("Expanding complex.")
                 expansion_nodes = current_node.generate_expansions()
+                # Attach each expansion as a sibbling of the `current_node`
+                for expansion_node in expansion_nodes:
+                    current_node.parent.add_child_node(expansion_node)
+                    grammar_stack.append((current_node, token_index))
 
             for child_node in current_node.children:
                 # TODO: (OPT) Add children to stack in order of least complex to
                 # most for optimization.
-                grammar_stack.append((current_node, token_index + 1))
+                grammar_stack.append((child_node, token_index + 1))
 
         return False
 
@@ -578,3 +635,17 @@ class Parser:
 def _lexer(filestream: InputFileStream):
     pass
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('file', help="bconf file to parse.")
+    parser.add_argument('--debug', help="Enable debug mode.", action='store_true')
+
+    args = parser.parse_args()
+    logging.getLogger(None).setLevel(logging.DEBUG if args.debug else logging.INFO)
+    logging.debug("parsing input file: %s", args.file)
+
+    parser = Parser(InputFileStream.FromFilename(args.file))
+    parse_success = parser.parse()
+    if not parse_success:
+        logging.error("Parser failed.")
+        sys.exit(1)
