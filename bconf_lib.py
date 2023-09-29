@@ -464,7 +464,7 @@ class GrammarNode:
         else:
             self.token_match = token_id
         self._children: list[Self] = []
-        self._parent = None
+        self._parent: Optional[Self] = None
   
     def __str__(self):
         if self.group_type is not None:
@@ -517,8 +517,8 @@ class GrammarNode:
 
     # Return a copy of the current node, excluding the children.
     def clone(self) -> Self:
-        new_node = GrammarNode(self.group_type if self.group_type is not None else self.token_match)
-        return new_node
+        new_node = GrammarNode(self.group_type if self.group_type is not None else self.token_match) # type: ignore
+        return new_node # type: ignore
 
     # Given a node, copy all the children and the children's childrens recursively until the
     # entire subtree of `src` is copied to the current grammar tree.
@@ -527,12 +527,12 @@ class GrammarNode:
         dst_stack: list[GrammarNode] = [self]
 
         while src_stack:
-            next_src = src_queue.pop()
+            next_src = src_stack.pop()
             next_dst = dst_stack.pop()
 
             for src_child in next_src.children:
-                next_child = src_child.clone()
-                next_dst.add_child_node(next_child)
+                dst_child = src_child.clone()
+                next_dst.add_child_node(dst_child)
                 src_stack.append(src_child)
                 dst_stack.append(dst_child)
 
@@ -542,15 +542,16 @@ class GrammarNode:
         assert self.is_complex()
 
         logging.debug("[generate_expansions] token_match = %s", self.token_match)
+        assert self.token_match is not None
         expansions = expand_grammar(self.token_match)
-        expansion_nodes = []
+        expansion_nodes: list[Self] = []
 
         # Create the node and duplicate the children of the current node to the
         # created node.
         for expansion in expansions:
             new_node = GrammarNode(expansion)
             new_node.copy_children_subtrees(self)
-            expansion_nodes.append(new_node)
+            expansion_nodes.append(new_node) # type: ignore
 
         return expansion_nodes
 
@@ -631,6 +632,7 @@ class Parser:
                 expansion_nodes = current_node.generate_expansions()
                 # Attach each expansion as a sibbling of the `current_node`
                 for expansion_node in expansion_nodes:
+                    assert current_node.parent is not None
                     current_node.parent.add_child_node(expansion_node)
                     grammar_stack.append((current_node, token_index))
 
@@ -647,7 +649,7 @@ class Parser:
         return self.parsed_data
 
     @property
-    def tree(self) -> GrammarTree:
+    def tree(self) -> Optional[GrammarTree]:
         return self.grammar_tree
 
 def _lexer(filestream: InputFileStream):
@@ -656,7 +658,7 @@ def _lexer(filestream: InputFileStream):
 def serve_parse_tree(tree: GrammarTree):
 
     import matplotlib.pyplot as plt
-    import networkx as nx
+    import networkx as nx # type: ignore
     from io import BytesIO
     import base64
 
@@ -700,24 +702,25 @@ def serve_parse_tree(tree: GrammarTree):
     run_server()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('file', help="bconf file to parse.")
-    parser.add_argument('--debug', help="Enable debug mode.", action='store_true')
-    parser.add_argument(
+    aparser = argparse.ArgumentParser()
+    aparser.add_argument('file', help="bconf file to parse.")
+    aparser.add_argument('--debug', help="Enable debug mode.", action='store_true')
+    aparser.add_argument(
         '--serve_parse_tree',
         help="After parsing is complete, serve the final parse tree as a pyvis interface for debugging.",
         action='store_true'
     )
 
-    args = parser.parse_args()
+    args = aparser.parse_args()
     logging.getLogger(None).setLevel(logging.DEBUG if args.debug else logging.INFO)
     logging.debug("parsing input file: %s", args.file)
 
-    parser = Parser(InputFileStream.FromFilename(args.file))
-    parse_success = parser.parse()
+    bconf_parser = Parser(InputFileStream.FromFilename(args.file))
+    parse_success = bconf_parser.parse()
 
     if args.serve_parse_tree:
-        serve_parse_tree(parser.tree)
+        assert bconf_parser.tree is not None
+        serve_parse_tree(bconf_parser.tree)
 
     if not parse_success:
         logging.error("Parser failed.")
