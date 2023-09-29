@@ -4,6 +4,7 @@ import sys
 import copy
 import logging
 import argparse
+import random
 from abc import abstractmethod
 from typing import TypeVar, Generic, Optional, Any
 from typing_extensions import Self
@@ -445,11 +446,18 @@ def expand_grammar(grammar: str) -> list[str]:
     [qualifier_str, qualifier_enum] = qualifier
     return _apply_qualifier(stripped_grammar, qualifier_enum, qualifier_str)
 
+_TOKENLST = ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t',
+             'u','v','w','x','y','z','0','1','2','3','4','5','6','7','8','9']
+def random_id(length: int) -> str:
+    return ''.join([_TOKENLST[random.randint(0, sys.maxsize) % len(_TOKENLST)] for _ in range(length)])
+
 class GrammarNode:
 
     def __init__(self, token_id: str | TokenGroupType):
         self.token_match: Optional[str] = None
         self.group_type: Optional[TokenGroupType] = None
+        self._id = random_id(25)
+        logging.debug("GrammarNode id: %s", self._id)
 
         if isinstance(token_id, TokenGroupType):
             self.group_type = token_id
@@ -462,6 +470,10 @@ class GrammarNode:
         if self.group_type is not None:
             return "[GROUP_TYPE]" # TODO: Print the actual group type info
         return self.token_match
+    
+    @property
+    def id(self) -> str:
+        return self._id
 
     @property
     def data(self) -> str | TokenGroupType:
@@ -576,6 +588,7 @@ class Parser:
         self.tokenstream = TokenStream(filestream)
         self.parsed_data: dict[str, Any] = {}
         self._tokens: list[Token] = []
+        self.grammar_tree: Optional[GrammarTree] = None
     
     # Cache the next token internally from the token stream.
     # If no more tokens are available, return False.
@@ -626,19 +639,75 @@ class Parser:
                 # most for optimization.
                 grammar_stack.append((child_node, token_index + 1))
 
+        self.grammar_tree = grammar_tree
         return False
 
     @property
     def data(self) -> dict[str, Any]:
         return self.parsed_data
 
+    @property
+    def tree(self) -> GrammarTree:
+        return self.grammar_tree
+
 def _lexer(filestream: InputFileStream):
     pass
+
+def serve_parse_tree(tree: GrammarTree):
+
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    from io import BytesIO
+    import base64
+
+    plt.rcParams["figure.figsize"] = [10, 10]
+
+    G = nx.Graph()
+
+    label_dict = {}
+    stack = [tree.root]
+    while stack:
+        next_node = stack.pop()
+        label_dict[next_node.id] = str(next_node)
+
+        for child_node in next_node.children:
+            stack.append(child_node)
+            G.add_edge(next_node.id, child_node.id)
+
+    nx.draw(G, labels=label_dict, with_labels=True)
+    plt.title("Parse Tree")
+
+    buf = BytesIO()
+    plt.savefig(buf, format="png")
+
+    data = base64.b64encode(buf.getbuffer())    
+    html = bytes("<img src='data:image/png;base64,", 'utf-8') + data + bytes("'/>", 'utf-8')
+
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    class StaticServer(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(html)
+
+    def run_server(server_class=HTTPServer, handler_class=StaticServer, port=8000):
+        server_address = ('', port)
+        httpd = server_class(server_address, handler_class)
+        logging.info("Serving parse tree to http://localhost:%s", port)
+        httpd.serve_forever()
+
+    run_server()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('file', help="bconf file to parse.")
     parser.add_argument('--debug', help="Enable debug mode.", action='store_true')
+    parser.add_argument(
+        '--serve_parse_tree',
+        help="After parsing is complete, serve the final parse tree as a pyvis interface for debugging.",
+        action='store_true'
+    )
 
     args = parser.parse_args()
     logging.getLogger(None).setLevel(logging.DEBUG if args.debug else logging.INFO)
@@ -646,6 +715,10 @@ if __name__ == "__main__":
 
     parser = Parser(InputFileStream.FromFilename(args.file))
     parse_success = parser.parse()
+
+    if args.serve_parse_tree:
+        serve_parse_tree(parser.tree)
+
     if not parse_success:
         logging.error("Parser failed.")
         sys.exit(1)
