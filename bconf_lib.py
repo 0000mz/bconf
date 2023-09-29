@@ -393,7 +393,7 @@ def extract_qualifier_from_end(grammar: str) -> Optional[tuple[Qualifier, str]]:
         return (Qualifier.MULTIPLIER, qualifier_str)
     elif qualifier_str[0] == '?':
         return (Qualifier.OPTIONAL, qualifier_str)
-    raise NotFoundError("Qualifier not defined.")
+    raise TypeError("Qualifier not defined.")
 
 def deparenthesize(grammar: str) -> str:
     if len(grammar) > 0 and grammar[0] == '(' and grammar[-1] == ')':
@@ -470,7 +470,7 @@ class GrammarNode:
     def is_complex(self) -> bool:
         if self.token_match is None:
             return False
-        return len(self.token_match) > 0 or not self.token_match.isalpha()
+        return len(self.token_match) > 1 or not self.token_match.isalpha()
 
     def is_same_node_type(self, node: Self) -> bool:
         if self.token_match is not None and node.token_match is not None:
@@ -552,7 +552,7 @@ class Parser:
         #
         # Special case: root node must satisfy token index -1, a non-existent
         # node. This should be skipped bc the root node here is the START token.
-        grammar_stack: list[tuple[GrammarNode, int]] = [[grammar_tree.root, -1]]
+        grammar_stack: list[tuple[GrammarNode, int]] = [(grammar_tree.root, -1)]
 
         # Try to find a path in the grammar tree that satisfies
         # the entire sequence of tokens in the token stream.
@@ -567,7 +567,7 @@ class Parser:
             for child_node in current_node.children:
                 # TODO: (OPT) Add children to stack in order of least complex to
                 # most for optimization.
-                grammar_stack.append([current_node, token_index + 1])
+                grammar_stack.append((current_node, token_index + 1))
 
         return False
 

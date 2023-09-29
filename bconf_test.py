@@ -468,8 +468,9 @@ class ExpanseinatorTest(unittest.TestCase):
 
         ('A{2}', ['AA'])
     ])
-    def test_expansinator(self, grammar: str, espansion: list[str]):
-        _ = expand_grammar(grammar)
+    def test_expansinator(self, grammar: str, expected_expansion: list[str]):
+        actual_expansion = expand_grammar(grammar)
+        self.assertEqual(actual_expansion, expected_expansion)
 
 # class ParserTest(unittest.TestCase):
 #
