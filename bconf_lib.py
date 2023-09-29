@@ -306,6 +306,8 @@ kTokenMap = {
         'L': TokenType.COLON,
         'M': TokenType.EQUAL,
 }
+kTokenMapReverse = dict(map(lambda el: (el[1], el[0]), kTokenMap.items()))
+
 class BConfGrammar(Grammar):
 
     def get(self):
@@ -459,6 +461,7 @@ class GrammarNode:
         self.group_type: Optional[TokenGroupType] = None
         self._id = random_id(25)
         self._token_index: int = -1
+        self._valid: bool = True
         logging.debug("GrammarNode id: %s", self._id)
 
         if isinstance(token_id, TokenGroupType):
@@ -472,10 +475,7 @@ class GrammarNode:
         if self.group_type is not None:
             return "[GROUP_TYPE]" # TODO: Print the actual group type info
         return self.token_match
-    
-    def attach_token_index(self, index: int):
-        self._token_index = index
-    
+     
     @property
     def token_index(self) -> int:
         return self._token_index
@@ -496,6 +496,28 @@ class GrammarNode:
     @property
     def parent(self) -> Optional[Self]:
         return self._parent
+
+    @property
+    def valid(self) -> bool:
+        return self._valid
+
+    def mark_invalid(self):
+        self._valid = False
+
+    def match_token(self, token: Token) -> bool:
+        ttype: TokenType = token.compute_type()
+        if self.group_type is not None:
+            # TODO: Implement match for group type
+            return False
+        elif self.is_complex():
+            # TODO: Implement match for complex type
+            return False
+        else:
+            return ttype in kTokenMapReverse and self.token_match == kTokenMapReverse[ttype]
+
+    # Keep track of the token index that is associated with this grammar node.
+    def attach_token_index(self, index: int):
+        self._token_index = index
 
     # A complex grammar node is a grammar node that has an expansion.
     # i.e. A+ has an expansion to AA+
@@ -628,17 +650,35 @@ class Parser:
         # node. This should be skipped bc the root node here is the START token.
         grammar_stack: list[tuple[GrammarNode, int]] = [(grammar_tree.root, -1)]
         logging.debug("Initial grammar stack for parsing: %s", grammar_stack)
+        start_node = True
 
         # Try to find a path in the grammar tree that satisfies
         # the entire sequence of tokens in the token stream.
         # Expand complex nodes if necessary.
         while grammar_stack:
             [current_node, token_index] = grammar_stack.pop()
+
+            skip_token = False
             if token_index >= 0:
                 # Force the population of the token lst.
-                _ = self._get_token(token_index)
+                token = self._get_token(token_index)
+                if token is not None:
+                    logging.debug(
+                            "Checking if %s matches %s [%s]",
+                            str(current_node),
+                            str(token),
+                            kTokenMapReverse[token.compute_type()]
+                            if token.compute_type() in kTokenMapReverse 
+                            else "[Unknown]"
+                    )
+                    skip_token = not current_node.match_token(token)
+                    logging.debug("match = %s", not skip_token)
 
-            logging.debug("parsing next node: %s (token index = %s)", current_node, token_index)
+            logging.debug(
+                "parsing next node: %s (token index = %s)",
+                current_node,
+                token_index
+            )
             current_node.attach_token_index(token_index)
 
             # Complex nodes should be expanded.
@@ -650,11 +690,17 @@ class Parser:
                     assert current_node.parent is not None
                     current_node.parent.add_child_node(expansion_node)
                     grammar_stack.append((current_node, token_index))
+            
+            if not start_node and skip_token:
+                current_node.mark_invalid()
 
-            for child_node in current_node.children:
-                # TODO: (OPT) Add children to stack in order of least complex to
-                # most for optimization.
-                grammar_stack.append((child_node, token_index + 1))
+            if not skip_token:
+                for child_node in current_node.children:
+                    # TODO: (OPT) Add children to stack in order of least complex to
+                    # most for optimization.
+                    grammar_stack.append((child_node, token_index + 1))
+            
+            if start_node: start_node = False
 
         self.grammar_tree = grammar_tree
         return False

@@ -16,16 +16,20 @@ def serve_parse_tree(tree: GrammarTree, tokenlst: list[Token]):
     G = nx.Graph()
 
     label_dict = {}
+    color_dict = {}
+
     stack = [tree.root]
     while stack:
         next_node = stack.pop()
         label_dict[next_node.id] = str(next_node) + ", token = " + get_token_string(tokenlst, next_node.token_index)
+        color_dict[next_node.id] = "blue" if next_node.valid else "red"
 
         for child_node in next_node.children:
             stack.append(child_node)
             G.add_edge(next_node.id, child_node.id)
 
-    nx.draw(G, labels=label_dict, with_labels=True)
+    color_seq = [color_dict[node] for node in G]
+    nx.draw(G, labels=label_dict, node_color=color_seq, with_labels=True)
     plt.title("Parse Tree")
 
     buf = BytesIO()
