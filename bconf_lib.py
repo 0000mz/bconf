@@ -9,6 +9,7 @@ from abc import abstractmethod
 from typing import TypeVar, Generic, Optional, Any
 from typing_extensions import Self
 from enum import Enum
+import server_util
 
 StreamData = TypeVar('StreamData')
 
@@ -68,7 +69,7 @@ class InputFileStream(Stream[bytes]):
         else:
             if not os.path.exists(filename):
                 raise FileNotFoundError("File not found: {}".format(filename))
-            self.fptr = open(filename, 'rb')
+            self.fptr = open(filename, 'r')
         self.chunk_size = chunk_size
 
     @staticmethod
@@ -457,6 +458,7 @@ class GrammarNode:
         self.token_match: Optional[str] = None
         self.group_type: Optional[TokenGroupType] = None
         self._id = random_id(25)
+        self._token_index: int = -1
         logging.debug("GrammarNode id: %s", self._id)
 
         if isinstance(token_id, TokenGroupType):
@@ -471,6 +473,13 @@ class GrammarNode:
             return "[GROUP_TYPE]" # TODO: Print the actual group type info
         return self.token_match
     
+    def attach_token_index(self, index: int):
+        self._token_index = index
+    
+    @property
+    def token_index(self) -> int:
+        return self._token_index
+
     @property
     def id(self) -> str:
         return self._id
@@ -595,6 +604,7 @@ class Parser:
     # If no more tokens are available, return False.
     def _cache_next_token(self) -> bool:
         next_token = self.tokenstream.next()
+        logging.debug("next token = %s", str(next_token))
         if next_token is None:
             return False
         self._tokens.append(next_token)
@@ -624,7 +634,12 @@ class Parser:
         # Expand complex nodes if necessary.
         while grammar_stack:
             [current_node, token_index] = grammar_stack.pop()
+            if token_index >= 0:
+                # Force the population of the token lst.
+                _ = self._get_token(token_index)
+
             logging.debug("parsing next node: %s (token index = %s)", current_node, token_index)
+            current_node.attach_token_index(token_index)
 
             # Complex nodes should be expanded.
             if current_node.is_complex():
@@ -645,6 +660,10 @@ class Parser:
         return False
 
     @property
+    def tokens(self) -> list[Token]:
+        return self._tokens
+    
+    @property
     def data(self) -> dict[str, Any]:
         return self.parsed_data
 
@@ -655,51 +674,6 @@ class Parser:
 def _lexer(filestream: InputFileStream):
     pass
 
-def serve_parse_tree(tree: GrammarTree):
-
-    import matplotlib.pyplot as plt
-    import networkx as nx # type: ignore
-    from io import BytesIO
-    import base64
-
-    plt.rcParams["figure.figsize"] = [10, 10]
-
-    G = nx.Graph()
-
-    label_dict = {}
-    stack = [tree.root]
-    while stack:
-        next_node = stack.pop()
-        label_dict[next_node.id] = str(next_node)
-
-        for child_node in next_node.children:
-            stack.append(child_node)
-            G.add_edge(next_node.id, child_node.id)
-
-    nx.draw(G, labels=label_dict, with_labels=True)
-    plt.title("Parse Tree")
-
-    buf = BytesIO()
-    plt.savefig(buf, format="png")
-
-    data = base64.b64encode(buf.getbuffer())    
-    html = bytes("<img src='data:image/png;base64,", 'utf-8') + data + bytes("'/>", 'utf-8')
-
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-    class StaticServer(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            self.wfile.write(html)
-
-    def run_server(server_class=HTTPServer, handler_class=StaticServer, port=8000):
-        server_address = ('', port)
-        httpd = server_class(server_address, handler_class)
-        logging.info("Serving parse tree to http://localhost:%s", port)
-        httpd.serve_forever()
-
-    run_server()
 
 if __name__ == "__main__":
     aparser = argparse.ArgumentParser()
@@ -720,7 +694,7 @@ if __name__ == "__main__":
 
     if args.serve_parse_tree:
         assert bconf_parser.tree is not None
-        serve_parse_tree(bconf_parser.tree)
+        server_util.serve_parse_tree(bconf_parser.tree, bconf_parser.tokens)
 
     if not parse_success:
         logging.error("Parser failed.")
